@@ -4,6 +4,7 @@ import "soggy"
 import "wav"
 import "core:fmt"
 import "core:slice"
+import "core:time"
 println :: fmt.println
 printf :: fmt.printf
 
@@ -22,34 +23,54 @@ main :: proc() {
 	audio, success := wav.read_wav("s/fly.wav")
 	defer delete(audio.signal)
 
+	power := cast(uint) log2(cast(int) winfo.lo.size.x)
+	bin_size := int(1 << power)
+	amount_of_bins := 1 + len(audio.signal) / bin_size
+	bindex := 0
+
+	piece := audio
+	complex_buffer := make([]complex64, bin_size)
+	fted := wav.Audio{ signal = make([]f32, bin_size/2) }
+	println(f32(bin_size)/f32(audio.sample_freq), "s")
+	defer delete(complex_buffer)
+	defer delete(fted.signal)
 
 	first_frame := true
+	playing := true
 	for soggy.loop(winfo) {
+		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
-			power := cast(uint) log2(cast(int) winfo.lo.size.x)
-			bin_size := int(1 << power)
+			power = cast(uint) log2(cast(int) winfo.lo.size.x)
+			bin_size = int(1 << power)
+//			amount_of_bins = min(int(winfo.lo.size.y - 1), 1 + len(audio.signal) / bin_size)
 
-			amount_of_bins := min(int(winfo.lo.size.y - 1), 1 + len(audio.signal) / bin_size)
-
-			piece := audio
 			complex_buffer := make([]complex64, bin_size)
-			defer delete(complex_buffer)
-			fted := wav.Audio{ signal = make([]f32, bin_size/2) }
-			defer delete(fted.signal)
+			fted = wav.Audio{ signal = make([]f32, bin_size/2) }
 		
 			slice.fill(winfo.lo.tex, 0)
-			for i_y in 0..<amount_of_bins {
-				piece.signal = audio.signal[i_y * bin_size:]
-				fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
-	
-				index := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - i_y - 1)
-				for f, x in fted.signal {
-					winfo.lo.tex[index + x] = soggy.mono_colour(u8(255*f))
-				}
+		}
+
+		if playing {
+			for y in 0..<int(winfo.lo.size.y) - 1 {
+				w := int(winfo.lo.size.x)
+				this_line := winfo.lo.tex[w*y : w*y + w]
+				next_line := winfo.lo.tex[w*y + w : w*y + 2*w]
+				copy(this_line, next_line)
+			}
+
+			piece.signal = audio.signal[bindex * bin_size:]
+			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
+			top_row := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - 1)
+			for f, x in fted.signal {
+				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*f))
 			}
 		}
 
+		bindex += 1
+		playing = bindex < amount_of_bins
+//		println(playing)
 		first_frame = false
+		println(time.duration_milliseconds(time.since(start_time)), "ms")
 	}
 
 }
