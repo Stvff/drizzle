@@ -163,10 +163,10 @@ loop :: proc(using winfo: ^Winfo) -> (should_continue: bool) {
 
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_2D, _lo_tex_o)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, expand_values(lo.size), 0, gl.RGBA, gl.UNSIGNED_BYTE, &lo.tex[0])
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, expand_values(lo.size), 0, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(lo.tex))
 	gl.ActiveTexture(gl.TEXTURE1)
 	gl.BindTexture(gl.TEXTURE_2D, _hi_tex_o)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, expand_values(hi.size), 0, gl.RGBA, gl.UNSIGNED_BYTE, &hi.tex[0])
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, expand_values(hi.size), 0, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(hi.tex))
 
 	gl.UseProgram(_shader_program)
 	gl.BindVertexArray(_vertex_array_o)

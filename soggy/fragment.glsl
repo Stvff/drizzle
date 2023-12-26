@@ -12,4 +12,4 @@ void main() {
 //	FragColor = mix(gui_clr, img_clr, img_clr.w);
 	FragColor = vec4((1.0 - top_clr.w)*bot_clr + (top_clr.w * top_clr));
 //	FragColor = gui_clr;
-};
+}
