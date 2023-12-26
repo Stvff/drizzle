@@ -5,14 +5,23 @@ import "wav"
 import "core:fmt"
 import "core:slice"
 import "core:time"
+import "core:os"
+
+import "vendor:raylib"
+
 println :: fmt.println
 printf :: fmt.printf
 
 main :: proc() {
+	if len(os.args) <= 1 {
+		println("give this program a wav file and watch the thing!")
+		return
+	}
+
 	winfo_actual := soggy.Winfo{
 		window_title = "drizzle",
 		hi_init_size = {1280, 800},
-		lo_scale = 1,
+		lo_scale = 2,
 		hi_minimum_size = {400, 400},
 		draw_on_top = .hi,
 	}
@@ -20,8 +29,16 @@ main :: proc() {
 	if !soggy.start(winfo) do return
 	defer soggy.exit(winfo)
 
-	audio, success := wav.read_wav("s/fly.wav")
+	audio, success := wav.read_wav(os.args[1])
+	if !success do return
 	defer delete(audio.signal)
+
+	raylib.InitAudioDevice()
+	defer raylib.CloseAudioDevice()
+	soundname := make([]byte, len(os.args[1]) + 1)
+	copy(soundname, transmute([]byte) os.args[1])
+	rlsound := raylib.LoadSound(transmute(cstring) raw_data(soundname) )
+	defer raylib.UnloadSound(rlsound)
 
 	power := cast(uint) log2(cast(int) winfo.lo.size.x)
 	bin_size := int(1 << power)
@@ -31,22 +48,27 @@ main :: proc() {
 	piece := audio
 	complex_buffer := make([]complex64, bin_size)
 	fted := wav.Audio{ signal = make([]f32, bin_size/2) }
-	println(f32(bin_size)/f32(audio.sample_freq), "s")
+	bin_time := time.Duration(f64(bin_size)/f64(audio.sample_freq)*1e9)
 	defer delete(complex_buffer)
 	defer delete(fted.signal)
 
 	first_frame := true
 	playing := true
+	start_start_time := time.now()
+	acc: time.Duration = 0
+	raylib.PlaySound(rlsound)
 	for soggy.loop(winfo) {
 		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
 			power = cast(uint) log2(cast(int) winfo.lo.size.x)
 			bin_size = int(1 << power)
-//			amount_of_bins = min(int(winfo.lo.size.y - 1), 1 + len(audio.signal) / bin_size)
+			amount_of_bins = 1 + len(audio.signal) / bin_size
 
-			complex_buffer := make([]complex64, bin_size)
+			delete(complex_buffer)
+			complex_buffer = make([]complex64, bin_size)
+			delete(fted.signal)
 			fted = wav.Audio{ signal = make([]f32, bin_size/2) }
-		
+
 			slice.fill(winfo.lo.tex, 0)
 		}
 
@@ -68,9 +90,9 @@ main :: proc() {
 
 		bindex += 1
 		playing = bindex < amount_of_bins
-//		println(playing)
 		first_frame = false
-		println(time.duration_milliseconds(time.since(start_time)), "ms")
+		time.sleep(bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1)))
+//		println((time.since(start_start_time) - bin_time*time.Duration(bindex)))
 	}
 
 }
