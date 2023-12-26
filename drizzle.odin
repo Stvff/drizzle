@@ -91,7 +91,15 @@ main :: proc() {
 		bindex += 1
 		playing = bindex < amount_of_bins
 		first_frame = false
-		time.sleep(bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1)))
+		{
+			time_to_sleep := bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1))
+			for time_to_sleep < 0 {
+				println("frame took too long:", time_to_sleep)
+				time_to_sleep += bin_time
+				bindex += 1
+			}
+			time.sleep(time_to_sleep)
+		}
 //		println((time.since(start_start_time) - bin_time*time.Duration(bindex)))
 	}
 
