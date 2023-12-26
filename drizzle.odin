@@ -89,7 +89,7 @@ main :: proc() {
 		}
 
 		bindex += 1
-		playing = bindex < amount_of_bins
+		playing = len(audio.signal) > bindex*bin_size
 		first_frame = false
 		{
 			time_to_sleep := bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1))
