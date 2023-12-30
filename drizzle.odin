@@ -60,9 +60,12 @@ main :: proc() {
 	for soggy.loop(winfo) {
 		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
+			old_index := bindex * bin_size
 			power = cast(uint) log2(cast(int) winfo.lo.size.x)
 			bin_size = int(1 << power)
 			amount_of_bins = 1 + len(audio.signal) / bin_size
+			bindex = old_index / bin_size
+			bin_time = time.Duration(f64(bin_size)/f64(audio.sample_freq)*1e9)
 
 			delete(complex_buffer)
 			complex_buffer = make([]complex64, bin_size)
@@ -72,14 +75,9 @@ main :: proc() {
 			slice.fill(winfo.lo.tex, 0)
 		}
 
+		playing = len(audio.signal) > bindex*bin_size
 		if playing {
-			for y in 0..<int(winfo.lo.size.y) - 1 {
-				w := int(winfo.lo.size.x)
-				this_line := winfo.lo.tex[w*y : w*y + w]
-				next_line := winfo.lo.tex[w*y + w : w*y + 2*w]
-				copy(this_line, next_line)
-			}
-
+			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
 			piece.signal = audio.signal[bindex * bin_size:]
 			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
 			top_row := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - 1)
@@ -89,7 +87,6 @@ main :: proc() {
 		}
 
 		bindex += 1
-		playing = len(audio.signal) > bindex*bin_size
 		first_frame = false
 		{
 			time_to_sleep := bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1))
