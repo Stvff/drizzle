@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:slice"
 import "core:time"
 import "core:os"
+import "core:math"
 
 import "vendor:raylib"
 
@@ -21,7 +22,7 @@ main :: proc() {
 	winfo_actual := soggy.Winfo{
 		window_title = "drizzle",
 		hi_init_size = {1280, 800},
-		lo_scale = 2,
+		lo_scale = 3,
 		hi_minimum_size = {400, 400},
 		draw_on_top = .hi,
 	}
@@ -40,32 +41,31 @@ main :: proc() {
 	rlsound := raylib.LoadSound(transmute(cstring) raw_data(soundname) )
 	defer raylib.UnloadSound(rlsound)
 
-	power := cast(uint) log2(cast(int) winfo.lo.size.x)
-	bin_size := int(1 << power)
-	amount_of_bins := 1 + len(audio.signal) / bin_size
-	bindex := 0
-
-	piece := audio
-	complex_buffer := make([]complex64, bin_size)
-	fted := wav.Audio{ signal = make([]f32, bin_size/2) }
-	bin_time := time.Duration(f64(bin_size)/f64(audio.sample_freq)*1e9)
-	defer delete(complex_buffer)
-	defer delete(fted.signal)
+	power: uint
+	bin_size, stride, amount_of_bins, bindex: int
+	bin_time: time.Duration
+	piece := wav.Audio{sample_freq = audio.sample_freq}
+	complex_buffer: []complex64
+	fted: wav.Audio
+	defer {
+		delete(complex_buffer)
+		delete(fted.signal)
+	}
 
 	first_frame := true
 	playing := true
 	start_start_time := time.now()
-	acc: time.Duration = 0
 	raylib.PlaySound(rlsound)
 	for soggy.loop(winfo) {
 		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
-			old_index := bindex * bin_size
-			power = cast(uint) log2(cast(int) winfo.lo.size.x)
+			old_index := bindex * stride
+			power = 13
 			bin_size = int(1 << power)
-			amount_of_bins = 1 + len(audio.signal) / bin_size
-			bindex = old_index / bin_size
-			bin_time = time.Duration(f64(bin_size)/f64(audio.sample_freq)*1e9)
+			stride = int(1 << 10)
+			amount_of_bins = 1 + len(audio.signal) / stride
+			bindex = old_index / stride
+			bin_time = time.Duration(f64(stride)/f64(audio.sample_freq)*1e9)
 
 			delete(complex_buffer)
 			complex_buffer = make([]complex64, bin_size)
@@ -73,17 +73,32 @@ main :: proc() {
 			fted = wav.Audio{ signal = make([]f32, bin_size/2) }
 
 			slice.fill(winfo.lo.tex, 0)
+			slice.fill(winfo.hi.tex, 0)
+			for x in 0..<(winfo.hi.size.x*i32(bindex))/i32(amount_of_bins) {
+				winfo.hi.tex[10*winfo.hi.size.x + x] = {255, 0, 0, 255}
+			}
 		}
 
-		playing = len(audio.signal) > bindex*bin_size
+		playing = len(audio.signal) > bindex*stride
 		if playing {
 			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
-			piece.signal = audio.signal[bindex * bin_size:]
+			piece.signal = audio.signal[bindex * stride:]
 			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
 			top_row := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - 1)
-			for f, x in fted.signal {
-				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*f))
+			max_f := cast(f64) fted.sample_freq
+			min_f := cast(f64) 20
+			log_max_f := math.log10(max_f)
+			max_x := cast(f64) winfo.lo.size.x
+			max_i := f64(len(fted.signal)) - 1
+			x_at_min_f := max_x*math.log10(min_f)/log_max_f
+			x_at_max_f := max_x*math.log10(max_f)/log_max_f
+			for x in 0..<int(x_at_max_f) {
+				curr_freq := min(max_f, math.pow(10.0, (f64(x) + x_at_min_f)*log_max_f/max_x))
+//				println(curr_freq)
+				i := int( max_i*curr_freq/max_f )
+				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*fted.signal[i]))
 			}
+			winfo.hi.tex[10*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = {255, 0, 0, 255}
 		}
 
 		bindex += 1
@@ -95,9 +110,9 @@ main :: proc() {
 				time_to_sleep += bin_time
 				bindex += 1
 			}
+			println(bin_time - time_to_sleep, bin_time)
 			time.sleep(time_to_sleep)
 		}
-//		println((time.since(start_start_time) - bin_time*time.Duration(bindex)))
 	}
 
 }
