@@ -8,7 +8,7 @@ import "core:time"
 import "core:os"
 import "core:math"
 
-import "vendor:raylib"
+import ma "vendor:miniaudio"
 
 println :: fmt.println
 printf :: fmt.printf
@@ -22,7 +22,7 @@ main :: proc() {
 	winfo_actual := soggy.Winfo{
 		window_title = "drizzle",
 		hi_init_size = {1280, 800},
-		lo_scale = 3,
+		lo_scale = 2,
 		hi_minimum_size = {400, 400},
 		draw_on_top = .hi,
 	}
@@ -34,12 +34,20 @@ main :: proc() {
 	if !success do return
 	defer delete(audio.signal)
 
-	raylib.InitAudioDevice()
-	defer raylib.CloseAudioDevice()
-	soundname := make([]byte, len(os.args[1]) + 1)
-	copy(soundname, transmute([]byte) os.args[1])
-	rlsound := raylib.LoadSound(transmute(cstring) raw_data(soundname) )
-	defer raylib.UnloadSound(rlsound)
+	audio_engine: ma.engine; {
+		ma_result := ma.engine_init(nil, &audio_engine)
+		if ma_result != .SUCCESS {
+			println("miniaudio: failed to initialize audio engine, with error:", ma_result)
+			return
+		}
+		soundname := make([]byte, len(os.args[1]) + 1)
+		copy(soundname, transmute([]byte) os.args[1])
+		ma_result = ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(soundname), nil)
+		if ma_result != .SUCCESS {
+			println("miniaudio: failed to play sound, with error:", ma_result)
+			return
+		}
+	} defer ma.engine_uninit(&audio_engine)
 
 	power: uint
 	bin_size, stride, amount_of_bins, bindex: int
@@ -55,9 +63,8 @@ main :: proc() {
 	first_frame := true
 	playing := true
 	start_start_time := time.now()
-	raylib.PlaySound(rlsound)
 	for soggy.loop(winfo) {
-		start_time := time.now()
+//		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
 			old_index := bindex * stride
 			power = 13
@@ -110,7 +117,7 @@ main :: proc() {
 				time_to_sleep += bin_time
 				bindex += 1
 			}
-			println(bin_time - time_to_sleep, bin_time)
+//			println(bin_time - time_to_sleep, bin_time)
 			time.sleep(time_to_sleep)
 		}
 	}

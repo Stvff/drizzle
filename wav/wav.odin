@@ -12,7 +12,7 @@ Audio_zero :: Audio { 0, nil }
 
 MAX_U15 :: 32767 /* (max_u16 / 2) - 1 */
 
-read_wav :: proc(name: string) -> (Audio, bool) {
+read_wav :: proc(name: string, print_unknown_sections := false) -> (Audio, bool) {
 	using fmt
 	/* read the file */
 	file, succes := os.read_entire_file(name)
@@ -97,7 +97,7 @@ read_wav :: proc(name: string) -> (Audio, bool) {
 	for { /* skipping possible unknown sections */
 		data_dword :[4]byte: "data"
 		if set(u32, data[0:4]) != transmute(u32) data_dword {
-			printf("read_wav: skipping unknown section %v...\n", string(data[0:4]))
+			if print_unknown_sections do printf("read_wav: skipping unknown section %v...\n", string(data[0:4]))
 			skip_val := set(u32, data[4:8]) + 8
 			if int(skip_val) >= len(data) {
 				printf("\aread_wav: the file '%v' has corrupted or unknown RIFF sections that lead to the end of the file\n", name)
