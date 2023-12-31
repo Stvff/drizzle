@@ -166,7 +166,7 @@ main :: proc() {
 			delete(audio.signal)
 			audio, success = wav.read_wav(files_to_open[files_index])
 			piece = wav.Audio{sample_freq = audio.sample_freq}
-			if !success do {
+			if !success {
 				files_index += 1
 				break
 			}
