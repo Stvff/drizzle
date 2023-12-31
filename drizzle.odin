@@ -5,20 +5,17 @@ import "wav"
 import "core:fmt"
 import "core:slice"
 import "core:time"
-import "core:os"
 import "core:math"
 
 import ma "vendor:miniaudio"
+import "vendor:glfw"
 
 println :: fmt.println
 printf :: fmt.printf
 
-main :: proc() {
-	if len(os.args) <= 1 {
-		println("give this program a wav file and watch the thing!")
-		return
-	}
+paused := false
 
+main :: proc() {
 	winfo_actual := soggy.Winfo{
 		window_title = "drizzle",
 		hi_init_size = {1280, 800},
@@ -29,8 +26,13 @@ main :: proc() {
 	winfo := &winfo_actual
 	if !soggy.start(winfo) do return
 	defer soggy.exit(winfo)
+	glfw.SetDropCallback(winfo._window_handle, file_drop_callback)
+	glfw.SetKeyCallback(winfo._window_handle, key_callback)
 
-	audio, success := wav.read_wav(os.args[1])
+	if wait_for_files_or_exit(winfo) do return
+
+	audio, success := wav.read_wav(files_to_open[files_index])
+	piece := wav.Audio{sample_freq = audio.sample_freq}
 	if !success do return
 	defer delete(audio.signal)
 
@@ -40,9 +42,7 @@ main :: proc() {
 			println("miniaudio: failed to initialize audio engine, with error:", ma_result)
 			return
 		}
-		soundname := make([]byte, len(os.args[1]) + 1)
-		copy(soundname, transmute([]byte) os.args[1])
-		ma_result = ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(soundname), nil)
+		ma_result = ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), nil)
 		if ma_result != .SUCCESS {
 			println("miniaudio: failed to play sound, with error:", ma_result)
 			return
@@ -52,7 +52,6 @@ main :: proc() {
 	power: uint
 	bin_size, stride, amount_of_bins, bindex: int
 	bin_time: time.Duration
-	piece := wav.Audio{sample_freq = audio.sample_freq}
 	complex_buffer: []complex64
 	fted: wav.Audio
 	defer {
@@ -62,7 +61,9 @@ main :: proc() {
 
 	first_frame := true
 	playing := true
+	was_paused := paused
 	start_start_time := time.now()
+	pause_start_time: time.Time
 	for soggy.loop(winfo) {
 //		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
@@ -82,12 +83,20 @@ main :: proc() {
 			slice.fill(winfo.lo.tex, 0)
 			slice.fill(winfo.hi.tex, 0)
 			for x in 0..<(winfo.hi.size.x*i32(bindex))/i32(amount_of_bins) {
-				winfo.hi.tex[10*winfo.hi.size.x + x] = {255, 0, 0, 255}
+				winfo.hi.tex[10*winfo.hi.size.x + x] = soggy.RED
+			}
+			first_frame = false
+			
+			{/* draw the queue */
+//				txt := "word"
+//				w := winfo.hi
+//				soggy.draw_bitfont_text(w, {winfo
+			
 			}
 		}
 
 		playing = len(audio.signal) > bindex*stride
-		if playing {
+		if playing && !paused {
 			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
 			piece.signal = audio.signal[bindex * stride:]
 			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
@@ -105,12 +114,22 @@ main :: proc() {
 				i := int( max_i*curr_freq/max_f )
 				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*fted.signal[i]))
 			}
-			winfo.hi.tex[10*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = {255, 0, 0, 255}
+			winfo.hi.tex[10*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
+			winfo.hi.tex[11*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
+			winfo.hi.tex[9*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
 		}
 
-		bindex += 1
-		first_frame = false
-		{
+		if !was_paused && paused {
+			ma.engine_stop(&audio_engine)
+			pause_start_time = time.now()
+		}
+		if was_paused && !paused {
+			ma.engine_start(&audio_engine)
+			start_start_time = time.time_add(start_start_time, time.since(pause_start_time))
+		}
+		was_paused = paused
+		if !paused {
+			bindex += 1
 			time_to_sleep := bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1))
 			for time_to_sleep < 0 {
 				println("frame took too long:", time_to_sleep)
@@ -119,6 +138,25 @@ main :: proc() {
 			}
 //			println(bin_time - time_to_sleep, bin_time)
 			time.sleep(time_to_sleep)
+		}
+
+		if !playing {
+			files_index += 1
+			if wait_for_files_or_exit(winfo) do return
+			first_frame = true
+			/* load new audio */
+			delete(audio.signal)
+			audio, success = wav.read_wav(files_to_open[files_index])
+			piece = wav.Audio{sample_freq = audio.sample_freq}
+			if !success do return
+			/* play new audio */
+			ma_result := ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), nil)
+			if ma_result != .SUCCESS {
+				println("miniaudio: failed to play sound, with error:", ma_result)
+				return
+			}
+			bindex = 0
+			start_start_time = time.now()
 		}
 	}
 
