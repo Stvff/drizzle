@@ -83,16 +83,34 @@ main :: proc() {
 			slice.fill(winfo.lo.tex, 0)
 			slice.fill(winfo.hi.tex, 0)
 			for x in 0..<(winfo.hi.size.x*i32(bindex))/i32(amount_of_bins) {
+				winfo.hi.tex[11*winfo.hi.size.x + x] = soggy.RED
 				winfo.hi.tex[10*winfo.hi.size.x + x] = soggy.RED
+				winfo.hi.tex[9*winfo.hi.size.x + x] = soggy.RED
 			}
 			first_frame = false
-			
-			{/* draw the queue */
-//				txt := "word"
-//				w := winfo.hi
-//				soggy.draw_bitfont_text(w, {winfo
-			
+			draw_queue = true
+		}
+		if draw_queue {
+			txt := "Currently playing:"
+			w := winfo.hi
+			scale := i32(4)
+			ypos := w.size.y - 5*scale - 20
+			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 40, ypos}, scale, txt, soggy.PASTEL_PINK)
+			txt = truncate_filename(files_to_open[files_index])
+			scale = 3
+			ypos += - 6*scale - 20
+			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 20, ypos}, scale, txt, soggy.PASTEL_PINK)
+			txt = "Queue:"
+			scale = 4
+			ypos += - 6*scale - 20
+			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 40, ypos}, scale, txt, soggy.PASTEL_PINK)
+			scale = 3
+			for i in files_index + 1 ..< len(files_to_open) {
+				txt = truncate_filename(files_to_open[i])
+				ypos += - 6*scale - 20
+				soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 20, ypos}, scale, txt, soggy.PASTEL_PINK)
 			}
+			draw_queue = false
 		}
 
 		playing = len(audio.signal) > bindex*stride
@@ -148,7 +166,10 @@ main :: proc() {
 			delete(audio.signal)
 			audio, success = wav.read_wav(files_to_open[files_index])
 			piece = wav.Audio{sample_freq = audio.sample_freq}
-			if !success do return
+			if !success do {
+				files_index += 1
+				break
+			}
 			/* play new audio */
 			ma_result := ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), nil)
 			if ma_result != .SUCCESS {
@@ -160,6 +181,16 @@ main :: proc() {
 		}
 	}
 
+}
+
+truncate_filename :: proc(name: string) -> string {
+	e := len(name) - 1
+	for e != 0 {
+		if name[e] == '\\' || name[e] == '/' do break
+		e -= 1
+	}
+	if e != len(name) - 1 do e += 1
+	return name[e:]
 }
 
 log2 :: proc(n: int) -> int {

@@ -7,6 +7,7 @@ import "soggy"
 
 files_index := 0
 files_to_open: [dynamic]string /* this string has zero-bytes allocated with it */
+draw_queue := true
 
 file_drop_callback :: proc "c" (window_handle: glfw.WindowHandle, count: i32, paths: [^]cstring) {
 	context = runtime.default_context()
@@ -16,8 +17,9 @@ file_drop_callback :: proc "c" (window_handle: glfw.WindowHandle, count: i32, pa
 		for str[strlen] != 0 do strlen += 1
 		file_to_open := make([]byte, strlen + 1)
 		for &c, i in file_to_open do c = str[i]
-		append(&files_to_open,  transmute(string) file_to_open/*[:1]*/)
+		append(&files_to_open,  transmute(string) file_to_open[:strlen])
 	}
+	draw_queue = true
 //	println(files_to_open)
 }
 
@@ -28,7 +30,7 @@ key_callback :: proc "c" (window_handle: glfw.WindowHandle, key, scancode, actio
 
 wait_for_files_or_exit :: proc(winfo: ^soggy.Winfo) -> bool {
 	waiting_text := "Drag a .wav file into this window from your file explorer"
-	scale := i32(5)
+	scale := i32(4)
 	soggy.draw_bitfont_text(winfo.hi, {winfo.hi.size.x/2 - i32(len(waiting_text))*2*scale, winfo.hi.size.y/2}, scale, waiting_text, soggy.RED)
 	for files_index >= len(files_to_open) {
 		if !soggy.loop(winfo) do return true
