@@ -3,6 +3,7 @@ package drizzle
 import "soggy"
 import "wav"
 import "core:fmt"
+import "core:os"
 import "core:slice"
 import "core:time"
 import "core:math"
@@ -12,8 +13,6 @@ import "vendor:glfw"
 
 println :: fmt.println
 printf :: fmt.printf
-
-paused := false
 
 main :: proc() {
 	winfo_actual := soggy.Winfo{
@@ -29,25 +28,37 @@ main :: proc() {
 	glfw.SetDropCallback(winfo._window_handle, file_drop_callback)
 	glfw.SetKeyCallback(winfo._window_handle, key_callback)
 
+	for i in 1..<len(os.args) {
+		str := transmute([]byte) os.args[i]
+		file_to_open := make([]byte, len(os.args[i]) + 1)
+		for c, i in str do file_to_open[i] = c
+		append(&files_to_open,  transmute(string) file_to_open[:len(os.args[i])])
+	}
 	if wait_for_files_or_exit(winfo) do return
 
 	audio, success := wav.read_wav(files_to_open[files_index])
 	piece := wav.Audio{sample_freq = audio.sample_freq}
 	if !success do return
 	defer delete(audio.signal)
-
-	audio_engine: ma.engine; {
+	
+	audio_engine: ma.engine;
+	engine_sound: ma.sound;
+	{
 		ma_result := ma.engine_init(nil, &audio_engine)
 		if ma_result != .SUCCESS {
 			println("miniaudio: failed to initialize audio engine, with error:", ma_result)
 			return
 		}
-		ma_result = ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), nil)
+		ma_result = ma.sound_init_from_file(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), 0, nil, nil, &engine_sound)
 		if ma_result != .SUCCESS {
-			println("miniaudio: failed to play sound, with error:", ma_result)
+			println("miniaudio: failed to init sound, with error:", ma_result)
 			return
 		}
-	} defer ma.engine_uninit(&audio_engine)
+		ma.engine_set_volume(&audio_engine, volume)
+		ma.sound_start(&engine_sound)
+	} defer {
+		ma.engine_uninit(&audio_engine)
+	}
 
 	power: uint
 	bin_size, stride, amount_of_bins, bindex: int
@@ -60,10 +71,10 @@ main :: proc() {
 	}
 
 	first_frame := true
-	playing := true
+	done := true
 	was_paused := paused
+	pause_start_time := time.now()
 	start_start_time := time.now()
-	pause_start_time: time.Time
 	for soggy.loop(winfo) {
 //		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
@@ -85,36 +96,30 @@ main :: proc() {
 			for x in 0..<(winfo.hi.size.x*i32(bindex))/i32(amount_of_bins) {
 				winfo.hi.tex[11*winfo.hi.size.x + x] = soggy.RED
 				winfo.hi.tex[10*winfo.hi.size.x + x] = soggy.RED
-				winfo.hi.tex[9*winfo.hi.size.x + x] = soggy.RED
+				winfo.hi.tex[ 9*winfo.hi.size.x + x] = soggy.RED
 			}
 			first_frame = false
-			draw_queue = true
+			redraw_queue = true
+			volume_set = true
 		}
-		if draw_queue {
-			txt := "Currently playing:"
-			w := winfo.hi
-			scale := i32(4)
-			ypos := w.size.y - 5*scale - 20
-			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 40, ypos}, scale, txt, soggy.PASTEL_PINK)
-			txt = truncate_filename(files_to_open[files_index])
-			scale = 3
-			ypos += - 6*scale - 20
-			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 20, ypos}, scale, txt, soggy.PASTEL_PINK)
-			txt = "Queue:"
-			scale = 4
-			ypos += - 6*scale - 20
-			soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 40, ypos}, scale, txt, soggy.PASTEL_PINK)
-			scale = 3
-			for i in files_index + 1 ..< len(files_to_open) {
-				txt = truncate_filename(files_to_open[i])
-				ypos += - 6*scale - 20
-				soggy.draw_bitfont_text(w, {w.size.x - scale*i32(4*len(txt)) - 20, ypos}, scale, txt, soggy.PASTEL_PINK)
+		if redraw_queue do draw_queue(winfo)
+		if volume_set {
+			soggy.draw_bitfont_char(winfo.hi, {20, 15}, 3, '-', soggy.GREEN)
+			soggy.draw_bitfont_char(winfo.hi, {100, 15}, 3, '+', soggy.GREEN)
+			yw := winfo.hi.size.x
+			for x in i32(0)..<60 {
+				clr := [4]byte{} if x >= i32(volume*60) else soggy.GREEN
+				winfo.hi.tex[22*yw + x + 35] = clr
+				winfo.hi.tex[23*yw + x + 35] = clr
+				winfo.hi.tex[24*yw + x + 35] = clr
 			}
-			draw_queue = false
+//			for x in 0..<i32(volume*50) do winfo.hi.tex[ypos + x + 25] = soggy.GREEN
+			ma.engine_set_volume(&audio_engine, volume)
+			volume_set = false
 		}
 
-		playing = len(audio.signal) > bindex*stride
-		if playing && !paused {
+		done = !(len(audio.signal) > bindex*stride)
+		if !done && !paused {
 			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
 			piece.signal = audio.signal[bindex * stride:]
 			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
@@ -132,25 +137,30 @@ main :: proc() {
 				i := int( max_i*curr_freq/max_f )
 				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*fted.signal[i]))
 			}
-			winfo.hi.tex[10*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
-			winfo.hi.tex[11*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
-			winfo.hi.tex[9*winfo.hi.size.x + (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)] = soggy.RED
+			{
+				x := (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)
+				winfo.hi.tex[10*winfo.hi.size.x + x] = soggy.RED
+				winfo.hi.tex[11*winfo.hi.size.x + x] = soggy.RED
+				winfo.hi.tex[ 9*winfo.hi.size.x + x] = soggy.RED
+			}
 		}
 
+		if done do paused = true
 		if !was_paused && paused {
-			ma.engine_stop(&audio_engine)
+			ma.sound_stop(&engine_sound)
 			pause_start_time = time.now()
 		}
 		if was_paused && !paused {
-			ma.engine_start(&audio_engine)
+			ma.sound_start(&engine_sound)
 			start_start_time = time.time_add(start_start_time, time.since(pause_start_time))
 		}
 		was_paused = paused
-		if !paused {
+
+		if !paused && !done {
 			bindex += 1
 			time_to_sleep := bin_time - (time.since(start_start_time) - bin_time*time.Duration(bindex - 1))
 			for time_to_sleep < 0 {
-				println("frame took too long:", time_to_sleep)
+//				println("frame took too long:", time_to_sleep)
 				time_to_sleep += bin_time
 				bindex += 1
 			}
@@ -158,10 +168,13 @@ main :: proc() {
 			time.sleep(time_to_sleep)
 		}
 
-		if !playing {
+		if done || new_song_selected {
+			ma.sound_stop(&engine_sound)
+			ma.sound_uninit(&engine_sound)
 			files_index += 1
-			if wait_for_files_or_exit(winfo) do return
-			first_frame = true
+			if files_index >= len(files_to_open) {
+				if wait_for_files_or_exit(winfo) do return
+			}
 			/* load new audio */
 			delete(audio.signal)
 			audio, success = wav.read_wav(files_to_open[files_index])
@@ -170,14 +183,19 @@ main :: proc() {
 				files_index += 1
 				break
 			}
-			/* play new audio */
-			ma_result := ma.engine_play_sound(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), nil)
+			ma_result := ma.sound_init_from_file(&audio_engine, transmute(cstring) raw_data(files_to_open[files_index]), 0, nil, nil, &engine_sound)
 			if ma_result != .SUCCESS {
-				println("miniaudio: failed to play sound, with error:", ma_result)
+				println("miniaudio: failed to init sound, with error:", ma_result)
 				return
 			}
 			bindex = 0
+			pause_start_time = time.now()
 			start_start_time = time.now()
+			if !paused {
+				ma.sound_start(&engine_sound)
+			}
+			first_frame = true
+			new_song_selected = false
 		}
 	}
 
