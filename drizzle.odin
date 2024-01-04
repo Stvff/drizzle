@@ -60,11 +60,13 @@ main :: proc() {
 		ma.engine_uninit(&audio_engine)
 	}
 
-	power: uint
-	bin_size, stride, amount_of_bins, bindex: int
+	power := uint(13)
+	bin_size := int(1 << power)
+	stride := int(1 << 10)
+	complex_buffer := make([]complex64, bin_size)
+	fted := wav.Audio{ signal = make([]f32, bin_size/2) }
+	amount_of_bins, bindex: int
 	bin_time: time.Duration
-	complex_buffer: []complex64
-	fted: wav.Audio
 	defer {
 		delete(complex_buffer)
 		delete(fted.signal)
@@ -79,17 +81,9 @@ main :: proc() {
 //		start_time := time.now()
 		if winfo.window_size_changed || first_frame {
 			old_index := bindex * stride
-			power = 13
-			bin_size = int(1 << power)
-			stride = int(1 << 10)
 			amount_of_bins = 1 + len(audio.signal) / stride
 			bindex = old_index / stride
 			bin_time = time.Duration(f64(stride)/f64(audio.sample_freq)*1e9)
-
-			delete(complex_buffer)
-			complex_buffer = make([]complex64, bin_size)
-			delete(fted.signal)
-			fted = wav.Audio{ signal = make([]f32, bin_size/2) }
 
 			slice.fill(winfo.lo.tex, 0)
 			slice.fill(winfo.hi.tex, 0)
@@ -113,7 +107,6 @@ main :: proc() {
 				winfo.hi.tex[23*yw + x + 35] = clr
 				winfo.hi.tex[24*yw + x + 35] = clr
 			}
-//			for x in 0..<i32(volume*50) do winfo.hi.tex[ypos + x + 25] = soggy.GREEN
 			ma.engine_set_volume(&audio_engine, volume)
 			volume_set = false
 		}
@@ -122,7 +115,8 @@ main :: proc() {
 		if !done && !paused {
 			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
 			piece.signal = audio.signal[bindex * stride:]
-			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
+//			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
+			fted = wav.fft(piece, power, complex_buffer, fted.signal)
 			top_row := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - 1)
 			max_f := cast(f64) fted.sample_freq
 			min_f := cast(f64) 20
@@ -131,11 +125,13 @@ main :: proc() {
 			max_i := f64(len(fted.signal)) - 1
 			x_at_min_f := max_x*math.log10(min_f)/log_max_f
 			x_at_max_f := max_x*math.log10(max_f)/log_max_f
+			mw: f32
 			for x in 0..<int(x_at_max_f) {
-				curr_freq := min(max_f, math.pow(10.0, (f64(x) + x_at_min_f)*log_max_f/max_x))
+				curr_freq := min(max_f, math.pow(10, (f64(x) + x_at_min_f)*log_max_f/max_x))
 //				println(curr_freq)
 				i := int( max_i*curr_freq/max_f )
-				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*fted.signal[i]))
+				w := clamp(math.log10(fted.signal[i])/3, 0, 1)
+				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*w))
 			}
 			{
 				x := (winfo.hi.size.x*i32(bindex))/i32(amount_of_bins)
@@ -145,7 +141,6 @@ main :: proc() {
 			}
 		}
 
-		if done do paused = true
 		if !was_paused && paused {
 			ma.sound_stop(&engine_sound)
 			pause_start_time = time.now()
@@ -172,6 +167,7 @@ main :: proc() {
 			ma.sound_stop(&engine_sound)
 			ma.sound_uninit(&engine_sound)
 			files_index += 1
+			if done && loop_current_audio && !new_song_selected do files_index -= 1
 			if files_index >= len(files_to_open) {
 				if wait_for_files_or_exit(winfo) do return
 			}

@@ -5,6 +5,7 @@ import "core:slice"
 import "vendor:glfw"
 import "soggy"
 
+loop_current_audio := false
 paused := false
 volume: f32 = 0.5
 volume_set := true
@@ -35,7 +36,7 @@ key_callback :: proc "c" (window_handle: glfw.WindowHandle, key, scancode, actio
 	}
 
 	case glfw.KEY_LEFT: if action == glfw.RELEASE {
-		files_index = clamp(files_index - 2, -1, len(files_to_open) - 1)
+		files_index = clamp(files_index - 2, 0, len(files_to_open) - 1)
 		new_song_selected = true
 	}
 	case glfw.KEY_RIGHT: if action == glfw.RELEASE {
@@ -49,6 +50,11 @@ key_callback :: proc "c" (window_handle: glfw.WindowHandle, key, scancode, actio
 	case glfw.KEY_UP: if action == glfw.REPEAT || action == glfw.RELEASE {
 		volume = clamp(volume + 0.1, 0, 1)
 		volume_set = true
+	}
+
+	case glfw.KEY_L: if action == glfw.RELEASE {
+		loop_current_audio = !loop_current_audio
+		redraw_queue = true
 	}
 
 	}
