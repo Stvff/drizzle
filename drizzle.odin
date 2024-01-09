@@ -95,6 +95,8 @@ main :: proc() {
 			first_frame = false
 			redraw_queue = true
 			volume_set = true
+//			soggy.draw_text(winfo.hi, {200, 200}, "hewwoo haiii x3 >.<", soggy.WHITE)
+//			soggy.draw_text(winfo.hi, {400, 400}, " !\"#$%%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{{|}}~", soggy.WHITE, .right)
 		}
 		if redraw_queue do draw_queue(winfo)
 		if volume_set {
@@ -102,7 +104,7 @@ main :: proc() {
 			soggy.draw_bitfont_char(winfo.hi, {100, 15}, 3, '+', soggy.GREEN)
 			yw := winfo.hi.size.x
 			for x in i32(0)..<60 {
-				clr := [4]byte{} if x >= i32(volume*60) else soggy.GREEN
+				clr := 0 if x >= i32(volume*60) else soggy.GREEN
 				winfo.hi.tex[22*yw + x + 35] = clr
 				winfo.hi.tex[23*yw + x + 35] = clr
 				winfo.hi.tex[24*yw + x + 35] = clr
@@ -115,7 +117,6 @@ main :: proc() {
 		if !done && !paused {
 			copy(winfo.lo.tex, winfo.lo.tex[winfo.lo.size.x:])
 			piece.signal = audio.signal[bindex * stride:]
-//			fted = wav.normalize(wav.fft(piece, power, complex_buffer, fted.signal))
 			fted = wav.fft(piece, power, complex_buffer, fted.signal)
 			top_row := int(winfo.lo.size.x)*(int(winfo.lo.size.y) - 1)
 			max_f := cast(f64) fted.sample_freq
@@ -128,7 +129,6 @@ main :: proc() {
 			mw: f32
 			for x in 0..<int(x_at_max_f) {
 				curr_freq := min(max_f, math.pow(10, (f64(x) + x_at_min_f)*log_max_f/max_x))
-//				println(curr_freq)
 				i := int( max_i*curr_freq/max_f )
 				w := clamp(math.log10(fted.signal[i])/3, 0, 1)
 				winfo.lo.tex[top_row + x] = soggy.mono_colour(u8(255*w))
@@ -199,12 +199,14 @@ main :: proc() {
 
 truncate_filename :: proc(name: string) -> string {
 	e := len(name) - 1
+	s := e
 	for e != 0 {
 		if name[e] == '\\' || name[e] == '/' do break
+		if s == len(name) - 1 && name[e] == '.' do s = e
 		e -= 1
 	}
 	if e != len(name) - 1 do e += 1
-	return name[e:]
+	return name[e:s]
 }
 
 log2 :: proc(n: int) -> int {

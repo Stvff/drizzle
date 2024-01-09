@@ -13,7 +13,7 @@ Audio_zero :: Audio { 0, nil }
 MAX_U15 :: 32767 /* (max_u16 / 2) - 1 */
 
 read_wav :: proc(name: string, print_unknown_sections := false) -> (Audio, bool) {
-	using fmt
+	printf :: fmt.printf
 	/* read the file */
 	file, succes := os.read_entire_file(name)
 	if !succes {

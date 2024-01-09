@@ -36,7 +36,7 @@ key_callback :: proc "c" (window_handle: glfw.WindowHandle, key, scancode, actio
 	}
 
 	case glfw.KEY_LEFT: if action == glfw.RELEASE {
-		files_index = clamp(files_index - 2, 0, len(files_to_open) - 1)
+		files_index = clamp(files_index - 2, -1, len(files_to_open) - 1)
 		new_song_selected = true
 	}
 	case glfw.KEY_RIGHT: if action == glfw.RELEASE {
@@ -61,15 +61,14 @@ key_callback :: proc "c" (window_handle: glfw.WindowHandle, key, scancode, actio
 }
 
 wait_for_files_or_exit :: proc(winfo: ^soggy.Winfo) -> bool {
-	waiting_text := "Drag a .wav file into this window from your file explorer"
-	scale := i32(4)
+	waiting_text := "Drag .wav files into this window from your file explorer"
 	first_frame := true
 	for files_index >= len(files_to_open) {
 		if !soggy.loop(winfo) do return true
 		if winfo.window_size_changed || first_frame {
 			slice.fill(winfo.lo.tex, 0)
 			slice.fill(winfo.hi.tex, 0)
-			soggy.draw_bitfont_text(winfo.hi, {winfo.hi.size.x/2 - i32(len(waiting_text))*2*scale, winfo.hi.size.y/2}, scale, waiting_text, soggy.RED)
+			soggy.draw_text(winfo.hi, {winfo.hi.size.x/2 - soggy.font_text_length(waiting_text, soggy.font_20)/2, winfo.hi.size.y/2}, waiting_text, soggy.RED, font = soggy.font_20)
 			draw_queue(winfo)
 			first_frame = false
 		}
@@ -83,13 +82,18 @@ wait_for_files_or_exit :: proc(winfo: ^soggy.Winfo) -> bool {
 draw_queue :: proc(winfo: ^soggy.Winfo) {
 	w := winfo.hi
 	ypos := w.size.y
-	scale := i32(3)
 	for i in 0..< len(files_to_open) {
 		txt := truncate_filename(files_to_open[i])
-		xpos := w.size.x - scale*i32(4*len(txt)) - 20
-		ypos += - 6*scale - 20
+		ypos += -40
 		color := soggy.PASTEL_PINK if i != files_index else soggy.PASTEL_RED
-		soggy.draw_bitfont_text(w, {xpos, ypos}, scale, txt, color)
+		soggy.draw_text(w, {w.size.x - 20, ypos}, txt, color, alignment = .right)
+	}
+	for y in i32(14)..<41 {
+		p1 := winfo.hi.size.x*y + 119
+		slice.fill(winfo.hi.tex[p1:p1 + 49], soggy.RED)
+	}
+	if loop_current_audio {
+		soggy.draw_text(winfo.hi, {120, 20}, "loop", soggy.PASTEL_RED, font = soggy.font_15)
 	}
 	redraw_queue = false
 }
