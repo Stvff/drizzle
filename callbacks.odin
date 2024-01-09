@@ -90,7 +90,7 @@ draw_queue :: proc(winfo: ^soggy.Winfo) {
 	}
 	for y in i32(14)..<41 {
 		p1 := winfo.hi.size.x*y + 119
-		slice.fill(winfo.hi.tex[p1:p1 + 49], soggy.RED)
+		slice.fill(winfo.hi.tex[p1:p1 + 49], 0)
 	}
 	if loop_current_audio {
 		soggy.draw_text(winfo.hi, {120, 20}, "loop", soggy.PASTEL_RED, font = soggy.font_15)
